@@ -1,0 +1,286 @@
+/*code by liaoyong*/
+#include "cchip_key_check.h"
+#include "error.h"
+#include "include.h"
+#include "typedef.h"
+#include "arm_arch.h"
+#include "gpio_pub.h"
+#include "uart_pub.h"
+#include "music_msg_pub.h"
+#include "co_list.h"
+#include <drivers/pin.h>
+
+#include "cchip_key_handle.h"
+
+#include "cchip_play_tip.h"
+#include <rw_pub.h>
+#include "TuringDispatcher.h"
+
+
+int j=0,k=0;
+
+static beken_timer_t cchip_key_handle_timer = {0};
+
+#define CCHIP_KEY_SCAN_INTERVAL_10MS		    10
+
+
+#define CCHIP_KEY_SHORTUP_COUNTER				4				// 30ms
+#define CCHIP_KEY_LONG_COUNTER				25				// 400ms 按住超过200ms 即认为是长按
+#define CCHIP_KEY_HOLD_COUNTER				150				// 2000ms	
+
+
+//static UINT16 backup_keyval = MSG_NO_KEY;
+//static UINT16 keycount = 0;
+static UINT16 detect_cnt = 0;
+static beken_timer_t key_handle_timer = {0};
+static int num = 0;
+
+typedef struct __KEY_DEY
+{
+	UINT32 key_detect_pin;
+	char *name;
+	UINT16 keycount;
+	UINT16 backup_keyval;
+}KEY_DEY;
+
+
+ static KEY_DEY key_array[] ={
+		{CCHIP_KEY_PLAY_PAUSE_PIN,   "play_or_pause",0,MSG_NO_KEY},
+		{CCHIP_KEY_VOLUME_ADD,   "add_volume",0,MSG_NO_KEY},
+		{CCHIP_KEY_VOLUME_REDUCE,   "reduce_volume",0,MSG_NO_KEY},
+		{CCHIP_KEY_VOICE,   "voice",0,MSG_NO_KEY},
+		{CCHIP_WECHAT,   "wechat",0,MSG_NO_KEY},
+		
+};
+
+
+static void cchip_key_scan_callback( void * arg ); 
+
+
+
+
+
+void cchip_key_init(void)
+{
+    UINT32 param;
+    OSStatus err;
+	int i=0;
+	
+	rt_pin_mode(USB_DET, PIN_MODE_INPUT_PULLDOWN);//插入适配器给电池充电USB_DET拉高
+	rt_pin_mode(CHG_DET, PIN_MODE_INPUT_PULLDOWN);//充电过程中 CHG_DET高 充满电 CHG_DET低
+	
+	for(i=0; i<sizeof(key_array)/sizeof(KEY_DEY);i++){
+		KEY_PRT("i=%d\n",key_array[i].key_detect_pin);
+
+		param = GPIO_CFG_PARAM(key_array[i].key_detect_pin, GMODE_INPUT_PULLUP);
+		sddev_control(GPIO_DEV_NAME, CMD_GPIO_CFG, &param);
+
+	//rt_pin_mode(key_array[i].key_detect_pin, 0x02);
+		
+
+		
+	}
+
+	err = rtos_init_timer(&cchip_key_handle_timer, 
+									CCHIP_KEY_SCAN_INTERVAL_10MS, 
+									cchip_key_scan_callback, 
+									(void *)&key_array[i]);
+			ASSERT(kNoErr == err);
+	
+			err = rtos_start_timer(&cchip_key_handle_timer);
+			ASSERT(kNoErr == err);	
+
+    KEY_PRT("==cchip_key_init==  \r\n");
+}
+
+static UINT16 cchip_key_detect(UINT32 pin)
+{
+    UINT16 key_pin_level;
+    UINT16 key_value = MSG_NO_KEY;
+    UINT32 key_detect_pin = pin;
+	//KEY_PRT("key_detect_pin =%d     ",key_detect_pin);
+	//if(pin)
+	//key_pin_level =  rt_pin_read(key_detect_pin);//
+
+	
+    	key_pin_level = sddev_control(GPIO_DEV_NAME, CMD_GPIO_INPUT, &key_detect_pin);
+	//KEY_PRT("key_detect_pin =%d  ---- key_pin_level =%d\n",key_detect_pin,key_pin_level);
+	//按下为低电平
+    if(key_pin_level == 0 )
+        key_value = MSG_KEY_PLAY;
+
+    return key_value;
+}
+
+static void cchip_key_detect_handle(int index)
+{
+    UINT32 msg;
+    UINT16 keyval = cchip_key_detect(key_array[index].key_detect_pin);
+	int tmp_vol=-1;
+	
+    if(keyval == MSG_NO_KEY)
+    {
+        if(key_array[index].keycount >= CCHIP_KEY_SHORTUP_COUNTER)
+        {
+        
+            //if(keycount >= CCHIP_KEY_HOLD_COUNTER)
+           // {
+           //     keycount = 0;
+           //     backup_keyval = MSG_NO_KEY;
+          //}
+            if(key_array[index].keycount > CCHIP_KEY_LONG_COUNTER)
+            {
+                
+                //os_printf("long press and value is[%x]\r\n", backup_keyval);
+				//os_printf("%s long press is end\r\n",key_array[index].name);
+				if(strcmp(key_array[index].name, "voice")==0)
+				{
+					//结束录音
+					os_printf("end capture\n");
+					led_msg_none();
+					send_key_handle_event(TURING_KEYHANDLE_CAPTURE_END);
+				
+				}else if(strcmp(key_array[index].name, "wechat")==0)
+				{
+					//结束微聊
+					os_printf("end capture\n");
+					led_msg_none();
+					send_key_handle_event(TURING_KEYHANDLE_WECHAT_END);
+					
+				}
+				
+
+            }
+            else
+            {
+                
+                os_printf("%s short press and value is[%x]\r\n", key_array[index].name,key_array[index].backup_keyval);
+
+
+				if(strcmp(key_array[index].name, "reduce_volume")==0)
+				{
+					//减少音量
+					os_printf("reduce_volume\n");
+					send_key_handle_event(TURING_KEYHANDLE_VOLUME_REDUCE);
+					
+				}
+				else if(strcmp(key_array[index].name, "add_volume")==0)
+				{
+					//增加音量
+					send_key_handle_event(TURING_KEYHANDLE_VOLUME_ADD);
+					
+					os_printf("add_volume\n");
+					
+				}
+				
+				else if(strcmp(key_array[index].name, "play_or_pause")==0)
+				{
+
+					os_printf("play_or_pause\n");
+					send_key_handle_event(TURING_KEYHANDLE_PAUSE);
+					
+				}
+
+			}                
+        }
+        key_array[index].keycount = 0;
+        key_array[index].backup_keyval = MSG_NO_KEY;	
+    }
+    else
+    {
+    	//第一次进来
+    
+        if(keyval != key_array[index].backup_keyval)
+        {
+        	//KEY_PRT("this fist\n");
+            key_array[index].keycount = 0;
+            key_array[index].backup_keyval = keyval;
+			
+        }
+		
+        key_array[index].keycount ++;
+		
+
+		//长按开始
+		if(key_array[index].keycount == CCHIP_KEY_LONG_COUNTER)
+		{
+			os_printf("%s long press is begin\r\n",key_array[index].name);
+			if(strcmp(key_array[index].name, "voice")==0)
+			{
+				//开始录音
+				os_printf("start capture\n");
+				//led_msg_record();
+				send_key_handle_event(TURING_KEYHANDLE_CAPTURE_START);
+			}else if(strcmp(key_array[index].name, "wechat")==0)
+			{
+				//开始微聊
+				os_printf("start wechat\n");
+				//led_msg_record();
+				send_key_handle_event(TURING_KEYHANDLE_WECHAT_START);
+				
+			}
+			
+			
+		}
+		//保持长按
+		if(key_array[index].keycount == CCHIP_KEY_HOLD_COUNTER)
+		{
+		    
+		//     //bmsg_music_sender((void*)msg);
+		//     os_printf("hold down and value is[%x]\r\n", backup_keyval);
+
+			if(strcmp(key_array[index].name, "play_or_pause")==0)
+			{
+
+				//set flag to flash
+				//reboot(char * pcWriteBuffer, int xWriteBufferLen, int argc, char * * argv)//
+				os_printf("start network_airkiss\n");
+				send_key_handle_event(TURING_KEYHANDLE_NETWORK_CONNECTTING);
+				
+			}else if(strcmp(key_array[index].name, "reduce_volume")==0)
+			{
+				//上一曲
+				os_printf("  prev song otGetPlaylistItem()=%d\n",Getplaylistindex());
+				send_key_handle_event(TURING_KEYHANDLE_SONG_PREV);
+				
+				
+			}
+			else if(strcmp(key_array[index].name, "add_volume")==0)
+			{
+				//下一曲
+				os_printf("next song  GetPlaylistItem()=%d\n",Getplaylistindex());
+				send_key_handle_event(TURING_KEYHANDLE_SONG_NEXT);
+				
+				
+			}
+		}
+
+		
+    }
+}
+
+
+static void cchip_key_scan_callback( void * arg )  
+{
+	//KEY_DEY key_arr = *(UINT32 *)arg;
+	//os_printf("start wechat\n");
+	int i =-1;
+	for(i=0; i<sizeof(key_array)/sizeof(KEY_DEY);i++){
+    	cchip_key_detect_handle(i);
+	}
+	if(j == 100){
+		//cchip_adccheck_callback(NULL);
+		
+		j=0;
+	}
+	j++;
+	//if(k ==10000){
+	//	if(mhdr_get_station_status() == MSG_GOT_IP )
+	//		TuringDispatcherQueueSend(TURING_DISPATCHER_REPORT_DEVICE_STATUS);
+	//	k=0;
+	//}
+	//k++;
+    
+} 
+
+

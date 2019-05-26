@@ -1,0 +1,7 @@
+menu "Test samples"
+    config RT_USING_IPERF_TEST
+        bool "Enable Iperf Test"
+        default n
+
+endmenu
+

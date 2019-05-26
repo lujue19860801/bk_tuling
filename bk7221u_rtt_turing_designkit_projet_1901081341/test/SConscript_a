@@ -1,0 +1,16 @@
+from building import *
+
+cwd = GetCurrentDir()
+
+src  = Glob('*.c')
+
+if not GetDepend('PKG_USING_WEBCLIENT'):
+    SrcRemove(src, 'webclient.c')
+
+if not GetDepend('RT_USING_IPERF_TEST'):
+    SrcRemove(src, 'iperf_client.c')
+
+group = DefineGroup('test', src, depend = [''])
+
+Return('group')
+

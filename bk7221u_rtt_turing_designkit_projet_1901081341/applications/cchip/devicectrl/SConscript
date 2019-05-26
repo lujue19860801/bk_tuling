@@ -1,0 +1,11 @@
+from building import *
+
+cwd     = GetCurrentDir()
+src     = []
+
+CPPPATH = [cwd]
+
+name = os.path.split(cwd)
+group = DefineGroup(str(name[1]), src, depend = [''], CPPPATH = CPPPATH)
+
+Return('group')

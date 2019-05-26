@@ -1,0 +1,10 @@
+from building import *
+
+cwd     = GetCurrentDir()
+src     = []
+src += ['conv_utf8.c']
+CPPPATH = [cwd]
+
+group = DefineGroup('utf8', src, depend = [''], CPPPATH = CPPPATH)
+
+Return('group')

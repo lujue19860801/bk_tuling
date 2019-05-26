@@ -1,0 +1,38 @@
+#ifndef _TURING_LEDCONTROL_H_
+#define _TURING_LEDCONTROL_H_
+
+#define LED_MATRIX_ROW_NUM 3
+#define LED_MATRIX_COLUMN_NUM 5
+
+#define LED_MATRIX_ROW1	25
+#define LED_MATRIX_ROW2	19
+#define LED_MATRIX_ROW3	17
+
+#define LED_MATRIX_COLUMN1	15
+#define LED_MATRIX_COLUMN2	18
+#define LED_MATRIX_COLUMN3	24
+#define LED_MATRIX_COLUMN4	26
+#define LED_MATRIX_COLUMN5	5
+
+
+#define LED_ED_PIN		3
+
+typedef enum LED_STATE_T
+{
+	LED_STATE_POWERON = 0,
+	LED_STATE_CONNECTING,
+	LED_STATE_CONNECT_OK,
+	LED_STATE_MUSIC,
+	LED_STATE_VOICE_CHAT,
+	LED_STATE_TURNOFF,
+}LED_STATE;
+
+#define LED_TIMER_PWM_ID 1
+#define LED_TIMER_PERIOD 4 /*4ms*/
+
+void led_init(void);
+void change_led_state(LED_STATE state);
+LED_STATE get_led_state(void);
+#endif
+// eof
+
